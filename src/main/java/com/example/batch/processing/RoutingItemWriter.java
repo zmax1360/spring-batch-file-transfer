@@ -29,7 +29,9 @@ public class RoutingItemWriter implements ItemWriter<RoutedRecord> {
         for (Map.Entry<ItemWriter<Map<String, Object>>, List<Map<String, Object>>> e : batches.entrySet()) {
             ItemWriter<Map<String, Object>> w = e.getKey();
             List<Map<String, Object>> items = e.getValue();
-            w.write(Chunk.of(items));
+            Chunk<Map<String, Object>> c = new Chunk<>();
+            c.addAll(items);
+            w.write(c);
         }
     }
 }
