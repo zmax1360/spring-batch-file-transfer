@@ -12,6 +12,7 @@ public class AppProperties {
     private String tableName;
     private String idColumn;
     private Pattern pattern;
+    private boolean softInsert = false;
 
     public String getArchiveDir() {
         return archiveDir;
@@ -59,6 +60,14 @@ public class AppProperties {
 
     public void setPattern(Pattern pattern) {
         this.pattern = pattern;
+    }
+
+    public boolean isSoftInsert() {
+        return softInsert;
+    }
+
+    public void setSoftInsert(boolean softInsert) {
+        this.softInsert = softInsert;
     }
 
     public static class Pattern {

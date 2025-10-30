@@ -77,12 +77,14 @@ public class BatchConfig {
                              PlatformTransactionManager transactionManager,
                              ItemReader<String> reader,
                              ItemProcessor<String, RoutedRecord> processor,
-                             ItemWriter<RoutedRecord> writer) {
+                             ItemWriter<RoutedRecord> writer,
+                             AppProperties props) {
         return new StepBuilder("transferStep", jobRepository)
                 .<String, RoutedRecord>chunk(100, transactionManager)
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
+                .listener(new SoftInsertChunkListener(props.isSoftInsert()))
                 .build();
     }
 

@@ -11,6 +11,7 @@ app:
   archiveDir: "/path/to/archive" # directory containing .gz files
   tableName: "dfdr_entity"
   idColumn: "id" # the identifier column contained in each line of the text file
+  softInsert: false # if true, mark transactions rollback-only (no actual writes)
   # parsing pattern for each line of the inner text files
   pattern:
     delimiter: ","
