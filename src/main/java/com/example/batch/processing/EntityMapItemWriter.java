@@ -25,7 +25,10 @@ public class EntityMapItemWriter implements ItemWriter<Map<String, Object>> {
             return;
         }
 
-        List<Map<String, Object>> items = new ArrayList<>(chunk);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map<String, Object> m : chunk) {
+            items.add(m);
+        }
         Map<String, Object> first = items.get(0);
         List<String> columns = new ArrayList<>(first.keySet());
 

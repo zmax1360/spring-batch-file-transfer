@@ -54,7 +54,7 @@ public class BatchConfig {
             @Override
             public void write(org.springframework.batch.item.Chunk<? extends RoutedRecord> chunk) throws Exception {
                 java.util.List<RoutedRecord> payloads = new java.util.ArrayList<>();
-                org.springframework.batch.item.Chunk<RoutedRecord> others = org.springframework.batch.item.Chunk.of();
+                org.springframework.batch.item.Chunk<RoutedRecord> others = new org.springframework.batch.item.Chunk<>();
                 for (RoutedRecord rr : chunk) {
                     if ("payload".equalsIgnoreCase(rr.getServiceName())) {
                         payloads.add(rr);
@@ -66,7 +66,9 @@ public class BatchConfig {
                     super.write(others);
                 }
                 if (!payloads.isEmpty()) {
-                    payloadWriter.write(org.springframework.batch.item.Chunk.of(payloads));
+                    org.springframework.batch.item.Chunk<RoutedRecord> payloadChunk = new org.springframework.batch.item.Chunk<>();
+                    payloadChunk.addAll(payloads);
+                    payloadWriter.write(payloadChunk);
                 }
             }
         };
