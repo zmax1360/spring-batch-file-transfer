@@ -11,8 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.function.BiPredicate;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
@@ -31,8 +30,10 @@ public class GzipLineItemReader implements ItemStreamReader<String>, ItemStream 
     // restartability keys
     private static final String CTX_FILE = "gzip.currentFile";
     private static final String CTX_LINE = "gzip.currentLine";
+    private static final String CTX_PROCESSED_FILES = "gzip.processedFiles"; // Set of processed file paths
     private String resumeFromFilePath;
     private long resumeFromLine = 0L;
+    private Set<String> processedFiles = new HashSet<>();
 
     public GzipLineItemReader(String archiveDir, String globPattern, String moveProcessedTo) {
         this.archiveDir = Paths.get(archiveDir);
@@ -57,6 +58,10 @@ public class GzipLineItemReader implements ItemStreamReader<String>, ItemStream 
                 currentLineNumber++;
                 return trimmed;
             } else {
+                // file completely read; mark as processed in ExecutionContext
+                if (currentFile != null) {
+                    processedFiles.add(currentFile.toString());
+                }
                 closeCurrentReader();
                 moveCurrentFileIfNeeded();
                 currentLineNumber = 0L;
@@ -96,6 +101,11 @@ public class GzipLineItemReader implements ItemStreamReader<String>, ItemStream 
                     }
                 }
                 if (Files.size(next) > 0) {
+                    String filePath = next.toString();
+                    // skip if already processed (tracked in ExecutionContext)
+                    if (processedFiles.contains(filePath)) {
+                        continue;
+                    }
                     currentFile = next;
                     InputStream fis = Files.newInputStream(next, StandardOpenOption.READ);
                     GZIPInputStream gis = new GZIPInputStream(fis);
@@ -149,6 +159,14 @@ public class GzipLineItemReader implements ItemStreamReader<String>, ItemStream 
             if (executionContext.containsKey(CTX_LINE)) {
                 this.resumeFromLine = executionContext.getLong(CTX_LINE);
             }
+            // restore processed files set from ExecutionContext
+            if (executionContext.containsKey(CTX_PROCESSED_FILES)) {
+                @SuppressWarnings("unchecked")
+                Set<String> saved = (Set<String>) executionContext.get(CTX_PROCESSED_FILES);
+                if (saved != null) {
+                    processedFiles = new HashSet<>(saved);
+                }
+            }
         }
     }
 
@@ -159,6 +177,8 @@ public class GzipLineItemReader implements ItemStreamReader<String>, ItemStream 
             executionContext.putString(CTX_FILE, currentFile.toString());
             executionContext.putLong(CTX_LINE, currentLineNumber);
         }
+        // persist processed files set to ExecutionContext
+        executionContext.put(CTX_PROCESSED_FILES, new HashSet<>(processedFiles));
     }
 
     @Override
