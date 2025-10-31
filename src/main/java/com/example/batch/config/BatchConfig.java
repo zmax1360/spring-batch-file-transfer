@@ -1,6 +1,8 @@
 package com.example.batch.config;
 
-import com.example.batch.io.GzipLineItemReader;
+import com.example.batch.io.FileDiscovery;
+import com.example.batch.io.GzipSingleFileLineReader;
+import com.example.batch.metrics.BatchMetrics;
 import com.example.batch.processing.DfdrEntityLookupProcessor;
 import com.example.batch.processing.EntityMapItemWriter;
 import com.example.batch.processing.RoutedRecord;
@@ -9,17 +11,26 @@ import com.example.batch.processing.PayloadItemWriter;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.file.MultiResourceItemReader;
+import org.springframework.batch.item.file.ResourceAwareItemReaderItemStream;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
 
 @Configuration
@@ -27,8 +38,29 @@ import java.util.Map;
 public class BatchConfig {
 
     @Bean
-    public ItemReader<String> gzipLineReader(AppProperties props) {
-        return new GzipLineItemReader(props.getArchiveDir(), props.getFileGlob(), props.getMoveProcessedTo());
+    @StepScope
+    public MultiResourceItemReader<String> multiResourceReader(AppProperties props,
+                                                              @org.springframework.beans.factory.annotation.Value("#{jobParameters['archiveDir']?:'${app.archiveDir}'}") String archiveDir,
+                                                              @org.springframework.beans.factory.annotation.Value("#{jobParameters['fileGlob']?:'${app.fileGlob:*.gz}'}") String fileGlob) {
+        MultiResourceItemReader<String> reader = new MultiResourceItemReader<>();
+        
+        try {
+            Path baseDir = Paths.get(archiveDir != null ? archiveDir : props.getArchiveDir());
+            String glob = fileGlob != null ? fileGlob : (props.getFileGlob() != null ? props.getFileGlob() : "*.gz");
+            List<Path> files = FileDiscovery.discoverFiles(baseDir, glob);
+            Resource[] resources = files.stream()
+                    .map(Path::toAbsolutePath)
+                    .map(FileSystemResource::new)
+                    .toArray(Resource[]::new);
+            reader.setResources(resources);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to discover files", e);
+        }
+        
+        ResourceAwareItemReaderItemStream<String> delegate = new GzipSingleFileLineReader();
+        reader.setDelegate(delegate);
+        reader.setStrict(true);
+        return reader;
     }
 
     @Bean
@@ -38,7 +70,7 @@ public class BatchConfig {
 
     @Bean
     public ItemWriter<Map<String, Object>> entityWriter(JdbcTemplate destinationJdbcTemplate, AppProperties props) {
-        return new EntityMapItemWriter(destinationJdbcTemplate, props.getTableName());
+        return new EntityMapItemWriter(destinationJdbcTemplate, props.getTableName(), props.getIdColumn());
     }
 
     @Bean
@@ -77,16 +109,24 @@ public class BatchConfig {
     @Bean
     public Step transferStep(JobRepository jobRepository,
                              PlatformTransactionManager transactionManager,
-                             ItemReader<String> reader,
+                             MultiResourceItemReader<String> reader,
                              ItemProcessor<String, RoutedRecord> processor,
                              ItemWriter<RoutedRecord> writer,
-                             AppProperties props) {
+                             AppProperties props,
+                             BatchMetrics metrics) {
         return new StepBuilder("transferStep", jobRepository)
-                .<String, RoutedRecord>chunk(100, transactionManager)
+                .<String, RoutedRecord>chunk(1000, transactionManager) // tuned chunk size
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
+                .faultTolerant()
+                .retryLimit(3)
+                .retry(java.sql.SQLException.class)
+                .retry(java.net.SocketTimeoutException.class)
+                .skip(Exception.class)
+                .skipLimit(100) // cap skips
                 .listener(new SoftInsertChunkListener(props.isSoftInsert()))
+                .listener(new MetricsStepListener(metrics))
                 .build();
     }
 

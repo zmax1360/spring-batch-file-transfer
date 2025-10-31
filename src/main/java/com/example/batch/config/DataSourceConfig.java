@@ -22,8 +22,13 @@ public class DataSourceConfig {
 
     @Bean
     @Primary
-    public DataSource sourceDataSource(@Qualifier("sourceDataSourceProperties") DataSourceProperties properties) {
+    public DataSource dataSource(@Qualifier("sourceDataSourceProperties") DataSourceProperties properties) {
         return properties.initializeDataSourceBuilder().build();
+    }
+
+    @Bean
+    public DataSource sourceDataSource(@Qualifier("dataSource") DataSource dataSource) {
+        return dataSource; // alias for sourceDataSource
     }
 
     @Bean

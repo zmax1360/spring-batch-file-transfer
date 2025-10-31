@@ -40,14 +40,21 @@ class BatchIntegrationTest {
 
     @BeforeEach
     void setupDbsAndFiles() throws Exception {
-        // DDL for both DBs
-        sourceJdbcTemplate.execute("DROP TABLE IF EXISTS dfdr_entity");
-        destinationJdbcTemplate.execute("DROP TABLE IF EXISTS dfdr_entity");
+        // DDL for both DBs - H2 is case-sensitive, drop both cases
+        try {
+            sourceJdbcTemplate.execute("DROP TABLE IF EXISTS dfdr_entity");
+            sourceJdbcTemplate.execute("DROP TABLE IF EXISTS DFDR_ENTITY");
+        } catch (Exception ignored) {}
+        try {
+            destinationJdbcTemplate.execute("DROP TABLE IF EXISTS dfdr_entity");
+            destinationJdbcTemplate.execute("DROP TABLE IF EXISTS DFDR_ENTITY");
+        } catch (Exception ignored) {}
         String ddl = "CREATE TABLE dfdr_entity (" +
-                "id VARCHAR(64) PRIMARY KEY, " +
+                "id VARCHAR(64), " +
                 "datetime VARCHAR(64), " +
                 "serviceName VARCHAR(128), " +
-                "message VARCHAR(1024)" +
+                "message VARCHAR(1024), " +
+                "PRIMARY KEY (id)" +
                 ")";
         sourceJdbcTemplate.execute(ddl);
         destinationJdbcTemplate.execute(ddl);
@@ -74,6 +81,8 @@ class BatchIntegrationTest {
     void endToEnd_entityAndPayload() throws Exception {
         JobParameters params = new JobParametersBuilder()
                 .addLong("ts", System.currentTimeMillis())
+                .addString("archiveDir", "target/test-archive")
+                .addString("fileGlob", "*.gz")
                 .toJobParameters();
         jobLauncher.run(transferJob, params);
 

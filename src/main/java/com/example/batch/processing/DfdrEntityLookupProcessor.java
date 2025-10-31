@@ -1,7 +1,7 @@
 package com.example.batch.processing;
 
 import com.example.batch.config.AppProperties;
-import com.example.batch.pattern.LineParser;
+import com.example.batch.pattern.RecordParser;
 import com.example.batch.pattern.ServiceNameResolver;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,7 +16,7 @@ public class DfdrEntityLookupProcessor implements ItemProcessor<String, RoutedRe
     private final String idColumn;
     private final String idFieldName;
     private final String serviceNameField;
-    private final LineParser parser;
+    private final RecordParser parser;
     private final ServiceNameResolver serviceNameResolver;
 
     public DfdrEntityLookupProcessor(JdbcTemplate sourceJdbcTemplate,
@@ -28,7 +28,7 @@ public class DfdrEntityLookupProcessor implements ItemProcessor<String, RoutedRe
         this.idColumn = idColumn;
         this.idFieldName = pattern.getIdField();
         this.serviceNameField = pattern.getServiceNameField();
-        this.parser = new LineParser(pattern);
+        this.parser = new RecordParser(pattern);
         this.serviceNameResolver = new ServiceNameResolver(pattern);
     }
 

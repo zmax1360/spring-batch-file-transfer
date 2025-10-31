@@ -1,7 +1,9 @@
 package com.example.batch;
 
-import com.example.batch.io.GzipLineItemReader;
+import com.example.batch.io.FileDiscovery;
+import com.example.batch.io.GzipSingleFileLineReader;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
@@ -18,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GzipLineItemReaderTest {
 
     @Test
-    void readsOnlyNomatchGzUnderReportArchive() throws Exception {
+    void fileDiscovery_filtersByNomatchKeyword() throws Exception {
         Path base = Files.createTempDirectory("reader-test");
         Path archive = base.resolve("x/log/report/instance_99/report/archive");
         Files.createDirectories(archive);
@@ -27,19 +29,36 @@ class GzipLineItemReaderTest {
         Path gz1 = archive.resolve("a-nomatch-1.gz");
         try (GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(gz1.toFile()));
              BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(gos, StandardCharsets.UTF_8))) {
-            bw.write("L1\n");
-            bw.write("\n");
-            bw.write("L2\n");
+            bw.write("test\n");
         }
+        
         // file to exclude (no nomatch)
         Path gz2 = archive.resolve("a-other-1.gz");
         try (GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(gz2.toFile()));
              BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(gos, StandardCharsets.UTF_8))) {
-            bw.write("X\n");
+            bw.write("test\n");
         }
 
-        GzipLineItemReader reader = new GzipLineItemReader(base.toString(), "*.gz", null);
+        List<Path> found = FileDiscovery.discoverFiles(base, "*.gz");
+        
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).getFileName().toString()).contains("nomatch");
+    }
+
+    @Test
+    void gzipSingleFileLineReader_readsLinesFromGzFile() throws Exception {
+        Path gz = Files.createTempFile("test", ".gz");
+        try (GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(gz.toFile()));
+             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(gos, StandardCharsets.UTF_8))) {
+            bw.write("L1\n");
+            bw.write("\n");
+            bw.write("L2\n");
+        }
+
+        GzipSingleFileLineReader reader = new GzipSingleFileLineReader();
+        reader.setResource(new FileSystemResource(gz));
         reader.open(new org.springframework.batch.item.ExecutionContext());
+        
         List<String> lines = new ArrayList<>();
         for (;;) {
             String s = reader.read();

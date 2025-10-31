@@ -26,44 +26,62 @@ public class PayloadItemWriter implements ItemWriter<RoutedRecord> {
 
     @Override
     public void write(Chunk<? extends RoutedRecord> chunk) throws Exception {
-        List<Map<String, Object>> toInsert = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (RoutedRecord rr : chunk) {
             Map<String, Object> parsed = rr.getParsed();
             if (parsed == null || parsed.isEmpty()) continue;
             Object idValue = parsed.get(idField);
             if (idValue == null) continue;
-
-            // Example: search destination for existing record by ID
-            Integer exists = destinationJdbcTemplate.query("SELECT 1 FROM " + tableName + " WHERE " + idField + " = ?",
-                    ps -> ps.setObject(1, idValue), rs -> rs.next() ? 1 : 0);
-
-            // Example calculation hook: no-op for now; you can enrich 'parsed' here
-            if (exists != null && exists == 1) {
-                // Example: skip or perform update if needed (left as insert-or-skip for now)
-                log.debug("payload exists in destination, skipping id={}", idValue);
-                continue;
-            }
-            toInsert.add(parsed);
+            
+            // Example calculation hook: enrich parsed fields if needed
+            // TODO: Add calculation logic here
+            
+            items.add(parsed);
         }
 
-        if (toInsert.isEmpty()) return;
+        if (items.isEmpty()) return;
 
-        // Insert parsed fields as-is into destination table (columns must match parsed field names)
-        Map<String, Object> first = toInsert.get(0);
+        // Build MERGE statement for idempotent upsert (no race condition)
+        Map<String, Object> first = items.get(0);
         List<String> columns = new ArrayList<>(first.keySet());
-        StringJoiner colJoiner = new StringJoiner(", ");
-        StringJoiner qMarks = new StringJoiner(", ");
-        for (String col : columns) {
-            colJoiner.add(col);
-            qMarks.add("?");
-        }
-        String sql = "INSERT INTO " + tableName + " (" + colJoiner + ") VALUES (" + qMarks + ")";
+        String mergeSql = buildMergeStatement(columns);
 
-        destinationJdbcTemplate.batchUpdate(sql, toInsert, 100, (ps, item) -> {
-            for (int i = 0; i < columns.size(); i++) {
-                ps.setObject(i + 1, item.get(columns.get(i)));
+        destinationJdbcTemplate.batchUpdate(mergeSql, items, 100, (ps, item) -> {
+            int paramIdx = 1;
+            // SET values (all columns except ID)
+            for (String col : columns) {
+                if (!col.equalsIgnoreCase(idField)) {
+                    ps.setObject(paramIdx++, item.get(col));
+                }
             }
+            // VALUES for INSERT
+            for (String col : columns) {
+                ps.setObject(paramIdx++, item.get(col));
+            }
+            // ON condition (ID match)
+            ps.setObject(paramIdx, item.get(idField));
         });
+    }
+
+    private String buildMergeStatement(List<String> columns) {
+        StringJoiner setClause = new StringJoiner(", ");
+        StringJoiner insertCols = new StringJoiner(", ");
+        StringJoiner insertVals = new StringJoiner(", ");
+        
+        for (String col : columns) {
+            insertCols.add(col);
+            insertVals.add("?");
+            if (!col.equalsIgnoreCase(idField)) {
+                setClause.add(col + " = ?");
+            }
+        }
+        
+        return String.format(
+                "MERGE INTO %s t " +
+                "USING (SELECT ? as %s FROM dual) s ON (t.%s = s.%s) " +
+                "WHEN MATCHED THEN UPDATE SET %s " +
+                "WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)",
+                tableName, idField, idField, idField, setClause, insertCols, insertVals);
     }
 }
 

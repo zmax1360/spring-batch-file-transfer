@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: spring-batch-file-transfer
+  batch:
+    job:
+      enabled: true
+    jdbc:
+      initialize-schema: always
+
+app:
+  archiveDir: "/path/to/archive" # directory containing .gz files
+  tableName: "dfdr_entity"
+  idColumn: "id" # the identifier column contained in each line of the text file
+  softInsert: false # if true, mark transactions rollback-only (no actual writes)
+  # parsing pattern for each line of the inner text files
+  pattern:
+    delimiter: ","
+    serviceNameField: "serviceName" # used when serviceNameMode: FIELD
+    serviceNameMode: "FIELD" # FIELD | LINE_REGEX | FILE_NAME_REGEX
+    serviceNameRegex: "" # e.g., "service=([a-z-]+)" when using a regex mode
+    idField: "id" # the field name in the line holding the entity id
+    fields:
+      - { name: "datetime", type: "string" }
+      - { name: "serviceName", type: "string" }
+      - { name: "id", type: "string" }
+      - { name: "message", type: "string" }
+
+  # Optional: move processed files
+  moveProcessedTo: "" # e.g., /path/to/archive/processed; leave blank to not move
+
+  # Optional: file pattern (only .gz supported in this implementation)
+  fileGlob: "*.gz"
+
+source:
+  datasource:
+    url: "jdbc:postgresql://localhost:5432/yourdb"
+    username: "youruser"
+    password: "yourpass"
+    driver-class-name: org.postgresql.Driver
+
+destination:
+  datasource:
+    url: "jdbc:oracle:thin:@//localhost:1521/FREEPDB1"
+    username: "youruser"
+    password: "yourpass"
+    driver-class-name: oracle.jdbc.OracleDriver
+
+logging:
+  level:
+    root: INFO
+    com.example.batch: INFO
+
+
